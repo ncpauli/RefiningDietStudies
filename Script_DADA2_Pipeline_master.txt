@@ -1,0 +1,237 @@
+########## DADA2 ITS Pipeline Workflow (1.8) incl. primer removal with cutadapt - Masterscript
+#following the tutorial by https://benjjneb.github.io/dada2/ITS_workflow.html
+
+############### Housekeeping
+#BiocManager::install("dada2",version="3.10")
+#install.packages("devtools")
+#library("devtools")
+#devtools::install_github("benjjneb/dada2", ref="v1.12") 
+
+require(dada2)
+require(ShortRead)
+require(Biostrings)
+require(RcppParallel)
+require(gridExtra)
+
+### adjust thread options to reduce traffic
+setThreadOptions(numThreads = 10, stackSize = "auto")
+
+### Define path for fastqc directory
+path<-"/domain/user/filename"
+list.files(path)
+
+### Generate matched lists of forward and reverse files
+fnFs<-sort(list.files(path,pattern = "L001_R1_001.fastq.gz",full.names = TRUE))
+fnRs<-sort(list.files(path,pattern = "L001_R2_001.fastq.gz",full.names = TRUE))
+
+#check if there are two fastq files for each sample
+length(fnFs) 
+length(fnRs)
+
+############### Primer identification
+### Identify primers #Adjust to individual primers
+FWD<-"GCGGTAATTCCAGCTCCAA"
+REV <-"ACTTTCGTTCTTGATYRR"
+
+### Verify primer orientation
+allOrients<-function(primer) {
+  require(Biostrings)
+  dna<-DNAString(primer)
+  orients<-c(Forward=dna,Complement=complement(dna),Reverse=reverse(dna),
+             RevComp=reverseComplement(dna))
+  return(sapply(orients,toString))
+}
+FWD.orients<-allOrients(FWD)
+REV.orients<-allOrients(REV)
+
+FWD.orients
+
+### Remove amibguous bases "Ns"
+fnFs.filtN<-file.path(path,"filtN",basename(fnFs))#put n-filtered files in filtN/ subdirectory
+fnRs.filtN<-file.path(path,"filtN",basename(fnRs))
+filterAndTrim(fnFs, fnFs.filtN, fnRs, fnRs.filtN,
+              truncQ=2,minQ=2,minLen=50,maxN=0,multithread = FALSE)
+
+### Count how often primers occur in the fw and rev reads
+primerHits<-function(primer,fn) {
+  nhits<-vcountPattern(primer,sread(readFastq(fn)),fixed=FALSE)
+  return(sum(nhits>0))
+}
+rbind(FWD.ForwardReads=sapply(FWD.orients,primerHits,fn=fnFs.filtN[[1]]),
+      FWD.ReverseReads=sapply(FWD.orients,primerHits,fn=fnRs.filtN[[1]]),
+      REV.ForwardReads=sapply(REV.orients,primerHits,fn=fnFs.filtN[[1]]),
+      REV.ReverseReads=sapply(REV.orients,primerHits,fn=fnRs.filtN[[1]]))
+
+#TROUBLESHOOTING: if REV primer machtes the reverse reads in its REVComp orientation, replace REV with its reverse complement
+#REV<-REV.orient[["RevComp"]]
+
+############### Remove primers using cutadapt
+### Define path for cutadapt and check version
+cutadapt<-"/domain/user/tools/cutadapt-1.9/cutadapt"
+
+### Create output file names for cut-adapted files and define parameters
+path.cut<-file.path(path,"cutadapt")
+if(!dir.exists(path.cut))dir.create(path.cut)
+fnFs.cut<-file.path(path.cut,basename(fnFs))
+fnRs.cut<-file.path(path.cut,basename(fnRs))
+
+FWD.RC<-dada2::rc(FWD)
+REV.RC<-dada2::rc(REV)
+
+### Trim FWD and reverse-comp of REV off of R1 (forward reads)
+R1.flags<-paste("-g",FWD,"-a",REV.RC)
+### Trim REV and the rev-compl of FWD off of R2 (reverse reads)
+R2.flags<-paste("-G",REV,"-A",FWD.RC)
+
+### Run cutadapt
+for(i in seq_along(fnFs)){
+  system2(cutadapt,args = c(R1.flags,R2.flags,"-n",2,#-n 2 required to remove FWD and REV from reads
+                            "--minimum-length 20", "--discard-untrimmed",
+                            "-o",fnFs.cut[i],"-p",fnRs.cut[i],#output files
+                            fnFs.filtN[i],fnRs.filtN[i]))#input files
+}
+
+### Sanity check! Count presence of primers in the first cutadapt -ed sample
+rbind(FWD.ForwardReads=sapply(FWD.orients,primerHits,fn=fnFs.cut[[1]]),#number in brackets=sample number
+      FWD.ReverseReads=sapply(FWD.orients,primerHits,fn=fnRs.cut[[1]]),
+      REV.ForwardReads=sapply(REV.orients,primerHits,fn=fnFs.cut[[1]]),
+      REV.ReverseReads=sapply(REV.orients,primerHits,fn=fnRs.cut[[1]]))
+
+### If successful, proceed with reading in cut-adapted fastq files and apply string manipulation
+cutFs<-sort(list.files(path.cut,pattern = "L001_R1_001.fastq.gz",full.names = TRUE))
+cutRs<-sort(list.files(path.cut,pattern = "L001_R2_001.fastq.gz",full.names = TRUE))
+
+#extract samples names, assuming filenames have this format - to later refer to derep files 
+get.sample.name<-function(fname) strsplit(basename(fname),"_")[[1]][4]
+sample.names<-unname(sapply(cutFs, get.sample.name))
+head(sample.names)
+
+#inspect read quality of first two samples, define truncation point where median quality score drops below 30
+pdf("QualityProfilescutFs.pdf")
+plotQualityProfile(cutFs[1:2])#forward
+dev.off()
+
+pdf("QualityProfilescutRs.pdf")
+plotQualityProfile(cutRs[1:2])#reverse
+dev.off
+
+#assign filenames for output of filtered reads to be stored as fastq.gz
+filtFs <- file.path(path.cut, "filtered", basename(cutFs))
+filtRs <- file.path(path.cut, "filtered", basename(cutRs))
+
+####### Filtering and trimming
+### Filter and trim
+out <- filterAndTrim(cutFs, filtFs, cutRs, filtRs, maxN = 0, maxEE = c(2.7, 2.4),#maxEE proprtional to truncation limit, factor 100 
+                     minQ = 2, truncLen=c(270,240),
+                     rm.phix = TRUE, compress = TRUE, multithread =TRUE)  # on windows, set multithread = FALSE
+head(out)
+
+### Inspect and save read quality of first two samples after trimming
+pdf("Qualioutrofile_trim_Fs.pdf")
+plotQualityProfile(filtFs[1:2])#forward
+dev.off()
+
+pdf("QualityProfiles_trim_Rs.pdf")
+plotQualityProfile(filtRs[1:2])#reverse
+dev.off()
+
+### Error rates
+#learn error rates - parametric error model (err), learns error rate specific to each dataset
+errF <- learnErrors(filtFs, multithread = FALSE, randomize = TRUE)
+errR <- learnErrors(filtRs, multithread = FALSE, randomize = TRUE)
+
+plotErrors(errF, nominalQ=TRUE)
+
+# plot error profiles
+pdf("ErrorProfiles.pdf")
+plotErrors(errF, nominalQ = TRUE)
+plotErrors(errR, nominalQ = TRUE)
+dev.off()
+
+### Dereplication
+#dereplicate identical reads
+derepFs <- derepFastq(filtFs, verbose = TRUE)
+derepRs <- derepFastq(filtRs, verbose = TRUE)
+
+# Name the derep-class objects by the sample names
+names(derepFs) <- sample.names
+names(derepRs) <- sample.names
+
+#applying core sample interference algorithm to dereplicated data
+dadaFs <- dada(derepFs, err = errF, multithread = FALSE, pool="pseudo")
+dadaRs <- dada(derepRs, err = errR, multithread = FALSE, pool="pseudo")
+
+#merge paired reads
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose=TRUE)
+# Inspect the merger data.frame from the first sample
+head(mergers[[1]])
+
+#construct sequence table
+seqtab<-makeSequenceTable(mergers)
+dim(seqtab)
+
+### Save sequence table if it shall be mergerd with samples from other runs. In that case proceed in line 207
+saveRDS(seqtab, "/domain/user/filename/seqtab.rds")
+
+#remove chimeras
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+table(nchar(getSequences(seqtab.nochim)))#inspect sequences length
+
+asv.length <- table(rep(nchar(colnames(seqtab.nochim)), colSums(seqtab.nochim)))
+write.table(asv.length, file = "asv_lengths.csv", row.names = FALSE)
+
+#Track reads through the pipeline
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, 
+                                                                       getN), rowSums(seqtab.nochim))
+# If processing a single sample, remove the sapply calls: e.g. replace
+# sapply(dadaFs, getN) with getN(dadaFs)
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", 
+                     "nonchim")
+rownames(track) <- sample.names
+head(track)
+
+#Assign taxonomy
+unite.ref <- "/domain/filename/pr2_version_4.12.0_18S_dada2.fasta" # CHANGE ME to location on your machine
+taxa <- assignTaxonomy(seqtab.nochim, unite.ref, multithread = TRUE, tryRC = TRUE,
+                      taxLevels = c("Kingdom","Supergroup","Division","Class","Order","Family","Genus","Species"))
+
+#inpsect taxonomic assignments
+taxa.print <- taxa  # Removing sequence rownames for display only
+rownames(taxa.print) <- NULL
+head(taxa.print)
+head(track)
+
+### Save and export R session and dataframes
+
+##### Merge multiple runs
+st1 <- readRDS("/domain/user/filename_runA/seqtab.rds")
+st2 <- readRDS("/domain/user/filename_runB/seqtab.rds")
+st3 <- readRDS("/domain/user/filename_runC/seqtab.rds")
+
+#check rownames if necessary (dublicate sample names?)
+rownames(st1)
+
+# merge runs
+st.all <- mergeSequenceTables(st1, st2, st3)
+
+### Remove chimeras
+seqtab <- removeBimeraDenovo(st.all, method="consensus", multithread=TRUE)
+
+table(nchar(getSequences(seqtab)))#inspect sequences length
+
+asv.length <- table(rep(nchar(colnames(seqtab)), colSums(seqtab)))
+write.table(asv.length, file = "asv_lengths.csv", row.names = FALSE)
+
+### Assign taxonomy
+unite.ref <- "/domain/filename/pr2_version_4.12.0_18S_dada2.fasta"
+taxa_all <- assignTaxonomy(seqtab, unite.ref, multithread = TRUE, minBoot = 80,
+                       tryRC = TRUE, 
+                       taxLevels = c("Kingdom","Supergroup","Division","Class","Order","Family","Genus","Species")) 
+
+### Inspect taxonomic assignments
+taxa.print <- taxa_all  # Removing sequence rownames for display only
+rownames(taxa.print) <- NULL
+head(taxa.print)
+
+### Save and export R session and dataframes
