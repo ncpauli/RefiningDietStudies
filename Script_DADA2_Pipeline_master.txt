@@ -1,5 +1,5 @@
 ########## DADA2 ITS Pipeline Workflow (1.8) incl. primer removal with cutadapt - Masterscript
-#following the tutorial by https://benjjneb.github.io/dada2/ITS_workflow.html
+#modified from https://benjjneb.github.io/dada2/ITS_workflow.html
 
 ############### Housekeeping
 #BiocManager::install("dada2",version="3.10")
