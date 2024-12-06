@@ -1,0 +1,117 @@
+############### Compositional data analysis of stomach content
+
+########## Load required packages
+library(CoDaSeq)
+library(igraph)
+library(vegan)
+require(ALDEx2);packageVersion("ALDEx2")
+require(factoextra)
+require(dplyr)
+require(tidyr)
+require(FactoMineR)
+
+############# Load data files
+## Sampledata
+metadata <- read.csv("Sampledata_filename.CSV", header=T, row.names=1, sep=";",check.names=F)
+str(metadata)
+rownames(metadata)
+
+### Tax and Seqtab
+seqtax <- read.csv("Seqtab_filename.CSV", header =T, sep=";" , stringsAsFactors = F)
+colnames(seqtax)
+
+## Create ASV count table
+asv <- seqtax[,1:30]#select columns with count data 
+str(asv)
+iy <- 1:30
+asv[iy] <- lapply(asv[iy], as.numeric)
+str(asv)
+colnames(asv)#sample names
+
+## Create Taxonomy table
+tax <- seqtax[,31:38]#select columns with taxonomy assignments
+str(tax)
+colnames(tax)
+
+# Assign names to ASV table
+asv.samp <- asv[,colnames(asv) %in% rownames(metadata)]
+colnames(asv.samp)
+
+### Set treatments groups
+levels(metadata$Treatment)
+
+IF <- asv.samp[, rownames(metadata)[metadata$Treatment == "IF"]]#10
+SP <- asv.samp[, rownames(metadata)[metadata$Treatment == "SP"]]#10
+
+### Merge groups in a dataframe
+merged.df <- data.frame(IF, SP, stringsAsFactors=F)
+
+#sanity check
+dim(merged.df)
+head(merged.df)
+
+##### Calculate relative abundances
+
+#sum abundances per sample
+seqtax_s.sum<-merged.df %>%
+  rowwise() %>%
+  mutate(ASV_sum=sum(c_across(SampleID_x:SampleID_n)))
+
+ASV_totalsum<-sum(seqtax_s.sum$ASV_sum)#rename column
+
+# calculate realtive abundance
+seqtax_s.relabund<-seqtax_s.sum %>%
+  rowwise()%>%
+  mutate(RelAbund=ASV_sum/ASV_totalsum)
+
+# remove all ASVs with an abundance lower than 0.01%
+merged.df.relabund.filt<-merged.df.relabund%>%
+  filter(RelAbund>=0.0001)
+dim(merged.df.relabund.filt)
+
+# remove rel abund. columns
+merged.df.relabund.filt_f<-merged.df.relabund.filt[,-c(21:22)]
+dim(merged.df.relabund.filt_f)
+
+# transpose data
+merged.df.relabund.filt_f.t<-t(merged.df.relabund.filt_f)
+
+### perform center-log-ratio transformation
+coda.clr <- codaSeq.clr(merged.df.relabund.filt_f.t+0.5,IQLR = T,aitch=T, samples.by.row = T)
+head(coda.clr)
+
+# perform pca
+svd1 <- prcomp(t(coda.clr))
+
+# screeplot
+fviz_eig(svd1)
+
+# plot PCA
+fviz_pca_ind(svd1,
+             label="none",
+             habillage = metadata_s$FreezingCategory,
+             addEllipses = T,
+             ellipse.level=0.95,
+             title="Krill stomach V4")
+
+
+#### Check for homogeneity of group dispersions (analogue to homogeneity of variances)
+coda.clr.t<-t(coda.clr)
+
+# create distance matrix and groups
+dist.coda.clr <- vegdist(coda.clr.t, method = "euclidean")
+rownames(coda.clr.t)
+grps <- c(rep("IF", 10), rep("SP", 10))
+
+# check for homogeneity of group dispersions
+mod <- betadisper(dist.coda.clr, group=grps)
+plot(mod)
+anova(mod)
+
+#permutest(mod, pairwise = TRUE, permutations = 9999)
+
+# perform PERMANOVA
+coda_adonis <- adonis2(dist.coda.clr ~ grps, perm=9999, method = "euclidean")
+coda_adonis
+summary(coda_adonis)
+
