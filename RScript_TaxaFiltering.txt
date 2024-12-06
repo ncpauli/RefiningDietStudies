@@ -1,0 +1,111 @@
+####################### Filter predator sequences
+
+#### Housekeeping
+library(phyloseq); packageVersion("phyloseq")
+library(Biostrings); packageVersion("Biostrings")
+library(ggplot2); packageVersion("ggplot2")
+require(RColorBrewer)
+require(plyr)
+
+################# Read OTU and Taxa files
+
+asv_table<-as.matrix(read.delim("filename_seqtab.CSV",row.names = 1,header = TRUE,sep=";"))
+head(asv_table)
+
+taxa_table<-as.matrix(read.delim("filename_taxtab.CSV",row.names = 1,header = TRUE,sep=";"))
+head(taxa_table)
+
+#sample meta data
+sample_data<- sample_data(read.delim("filename_metadata.txt", row.names = 1, header=TRUE))
+head(sample_data)
+
+################# Create phyloseq object from modified dataset
+OTU<-otu_table(asv_table,taxa_are_rows = TRUE)
+
+TAXA<-tax_table(taxa_table)
+
+PhyloseqObject<-phyloseq(OTU,TAXA,sample_data)
+
+################# Remove salp sequences from salp samples
+# for krill see line 60
+##check for existing taxa level
+colnames(tax_table(PhyloseqObject))
+
+#check for the content of a specific taxon level
+table(tax_table(PhyloseqObject)[, "Supergroup"])
+table(tax_table(PhyloseqObject)[, "Division"])
+table(tax_table(PhyloseqObject)[, "Class"])
+
+##### filter salp sequences
+filterClass <- c("Urochordata", "Craniata")
+Salps_phyloseq_filt1 <- subset_taxa(PhyloseqObject, !Class %in% filterClass)
+
+#check for the content of the next taxon level
+table(tax_table(Salps_phyloseq_filt1)[, "Order"])
+table(tax_table(Salps_phyloseq_filt1)[, "Family"])
+
+##### Extract matrix from the phyloseq object
+OTU1 = as(otu_table(Salps_phyloseq_filt1), "matrix")
+# transpose if necessary
+#if(taxa_are_rows(Salps_phyloseq_filt1)){OTU1 <- t(OTU1)}
+# Coerce to data.frame
+OTUdf = as.data.frame(OTU1)
+write.table(OTUdf, file = "filename_seqtab_filt1.csv",sep=";")
+
+Taxa1 = as(tax_table(Salps_phyloseq_filt1), "matrix")
+Taxadf = as.data.frame(Taxa1)
+write.table(Taxadf, file = "filename_taxa_filt1.csv",sep=";")
+
+
+
+############# Remove krill seq. from krill samples
+filterSupergroup <- c("Eukaryota_X")
+Krill_phyloseq_filt1 <- subset_taxa(Krill_phyloseq, !Supergroup %in% filterSupergroup)
+
+#check for the content of the next taxon level
+table(tax_table(Krill_phyloseq_filt1)[, "Division"])
+table(tax_table(Krill_phyloseq_filt1)[, "Class"])
+
+# remove further taxa
+filterClass <- c("Craniata","Metazoa_X","Embryophyceae")#
+Krill_phyloseq_filt2 <- subset_taxa(Krill_phyloseq_filt1, !Class %in% filterClass)
+
+#check for the content of the next taxon level
+table(tax_table(Krill_phyloseq_filt2)[, "Order"])
+
+filterOrder <- c("Arthropoda_X")
+Krill_phyloseq_filt3 <- subset_taxa(Krill_phyloseq_filt2, !Order %in% filterOrder)
+
+table(tax_table(Krill_phyloseq_filt3)[, "Family"])
+
+filterFamily <- c("Malacostraca", "Insecta")
+Krill_phyloseq_filt4 <- subset_taxa(Krill_phyloseq_filt3, !Family %in% filterFamily)
+
+#check for the content of the next taxon level
+table(tax_table(Krill_phyloseq_filt4)[, "Genus"])
+
+Krill_phyloseq_filt4# final object
+
+############ Plot rarefaction curves
+library(gridExtra)
+
+tab_pred<-otu_table(Krill_phyloseq_filt3)
+class(tab_pred)<-"matrix"
+tab<-t(tab_pred)
+rare1<-rarecurve(tab_pred, step = 500, lwd=2, ylab="ASV",
+          ylim=c(0,50),
+          label=F)
+
+############ Rarefy to even sampling depth
+### Check for depth/sample
+sample_sums(Krill_phyloseq_filt4)
+
+### Drop samples with very low sampling depth
+V4V7_ps_filt3_n200 <- prune_samples(names(which(sample_sums(Krill_phyloseq_filt4) >= 200)), Krill_phyloseq_filt4)
+
+sample_sums(Krill_phyloseq_filt4_n200)
+
+set.seed(500)
+Krill_raref <- rarefy_even_depth(Krill_phyloseq_filt4_n200, replace = TRUE, rngseed = TRUE)
+
+sample_sums(Krill_raref)
