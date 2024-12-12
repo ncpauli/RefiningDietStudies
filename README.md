@@ -3,5 +3,5 @@ This repository is supplement to the article "Refining zooplankton diet composit
 
 The raw, primer-trimmed sequences of this study are deposited in the European Nucleotide Archive (ENA), project number PRJEB43900 (http://www.ebi.ac.uk/ena/data/view/PRJEB43900 ).
 
-If you want to use this code, please cite zenodo doi: 
+If you want to use this code, please cite zenodo doi 10.5281/zenodo.14289105.
 
