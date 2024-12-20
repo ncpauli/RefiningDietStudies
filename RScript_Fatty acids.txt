@@ -1,0 +1,269 @@
+######### Analyses of fatty acid trophic markers in tissue and stomachs of krill and salps
+
+### Load required packages
+require(easyCODA)
+require(gridExtra)
+require(grid)
+require(ggplot2)
+
+### Load datafile
+FAtg<- read.csv("Filename.csv", header=T, sep = ";",check.names = "F")
+str(FAtg)
+
+### Create subsets for krill and salps
+FAtg_Krill<-subset(FAtg,Species=="E. superba")
+FAtg_Salp<-subset(FAtg,Species=="S. thompsoni")
+
+### Calculate group means for PUFAs, and markers for diatoms, dinoflagelates, and copepods
+# PUFA
+Means_PUFA <- tapply(FAtg$PUFA,interaction(FAtg$Species,FAtg$Type),mean,na.rm=TRUE)
+round(Means_PUFA,digits=4)
+#Diatoms
+Means_Diatoms <- tapply(FAtg$Diatoms,interaction(FAtg$Species,FAtg$Type),mean,na.rm=TRUE)
+round(Means_Diatoms,digits=4)
+# Dinoflagellates
+Means_Dinoflagellates <- tapply(FAtg$Dinoflagellates,interaction(FAtg$Species,FAtg$Type),mean,na.rm=TRUE)
+round(Means_Dinoflagellates,digits=4)
+# Calanoid copepods
+Means_Cop <- tapply(FAtg$CalCop,interaction(FAtg$Species,FAtg$Type),mean,na.rm=TRUE)
+round(Means_Cop,digits=4)
+
+###### Diatom trophic markers
+### Krill
+# F-test to test for homogeneity of variances
+res.ftest <- var.test(Diatoms~Type, data=FAtg_Krill)
+res.ftest
+
+# Shapiro test of  normal distribution
+with(FAtg_Krill, shapiro.test(Diatoms[Type == "Stomach"]))
+with(FAtg_Krill, shapiro.test(Diatoms[Type == "Tissue"]))
+
+# T-test if normal distribution
+t.test(Diatoms ~ Type, data = FAtg_Krill, var.equal = TRUE)
+
+# Wilcox test alternatively
+wilcox.test(Diatoms ~ Type, data = FAtg_Krill, exact=FALSE)
+
+### Salps
+# F-test to test for homogeneity of variances
+res.ftestS <- var.test(Diatoms~Type, data=FAtg_Salp)
+res.ftestS
+
+# Shapiro test of  normal distribution
+with(FAtg_Salp, shapiro.test(Diatoms[Type == "Stomach"]))
+with(FAtg_Salp, shapiro.test(Diatoms[Type == "Tissue"]))
+
+# T-test
+t.test(Diatoms ~ Type, data = FAtg_Salp, var.equal = TRUE)
+
+### Plot
+gg_Diatoms_tg<-ggplot(FAtg, aes(x=Type,y=Diatoms,color=Species))+
+  stat_boxplot(geom="errorbar",width=0.2)+
+  geom_boxplot()+
+  geom_point(size=2.5, alpha = 0.7, position = "jitter")+
+  theme_bw()+
+  theme(panel.border = element_blank())+
+  theme(axis.line = element_line(colour = "darkgrey"))+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())+
+  labs(x="",y="Diatom marker of total fatty acids [%]")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))+
+  scale_color_manual(values = c("coral3","darkblue"))+
+  theme(legend.position="none")+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14,margin = margin(r=7)))+#face="bold
+  theme(axis.text.x = element_text(size=14),
+        axis.text.y = element_text(size = 14))+#face="italic"
+  theme(strip.text.x = element_text(size = 15, face = "italic"))+
+  facet_wrap(~Species)
+
+gg_Diatoms_tg
+
+###### Dinoflagellate trophic markers
+### Krill
+# F-test to test for homogeneity of variances
+var.test(Dinoflagellates~Type, data=FAtg_Krill)
+
+# Shapiro test ofr  normal distribution
+with(FAtg_Krill, shapiro.test(Dinoflagellates[Type == "Stomach"]))
+with(FAtg_Krill, shapiro.test(Dinoflagellates[Type == "Tissue"]))
+
+# Wilcox test
+wilcox.test(Dinoflagellates ~ Type, data = FAtg_Krill, exact=FALSE)
+
+### Salps
+# F-test to test for homogeneity of variances
+var.test(Dinoflagellates~Type, data=FAtg_Salp)
+# T-test
+t.test(Dinoflagellates ~ Type, data = FAtg_Salp, var.equal = TRUE)
+
+# Shapiro test ofr  normal distribution
+with(FAtg_Salp, shapiro.test(Dinoflagellates[Type == "Stomach"]))
+with(FAtg_Salp, shapiro.test(Dinoflagellates[Type == "Tissue"]))
+
+# Wilcox test
+wilcox.test(Dinoflagellates ~ Type, data = FAtg_Salp, exact = FALSE)
+
+### Plot
+gg_Dino_tg<-ggplot(FAtg, aes(x=Type,y=Dinoflagellates,color=Species))+
+  stat_boxplot(geom="errorbar",width=0.2)+
+  geom_boxplot()+
+  geom_point(size=2.5, alpha = 0.7, position = "jitter")+
+  theme_bw()+
+  theme(panel.border = element_blank())+
+  theme(axis.line = element_line(colour = "darkgrey"))+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())+
+  labs(x="",y="Dinoflagellate marker of total fatty acids [%]")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))+
+  scale_color_manual(values = c("coral3","darkblue"))+
+  theme(legend.position="none")+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14,margin = margin(r=7)))+#face="bold
+  theme(axis.text.x = element_text(size=14),
+        axis.text.y = element_text(size = 14))+
+  theme(strip.text.x = element_text(size = 15, face = "italic"))+
+  facet_wrap(~Species)
+
+gg_Dino_tg
+
+###### Copepod trophic markers
+### Krill
+# F-test to test for homogeneity of variances
+var.test(CalCop~Type, data=FAtg_Krill)
+
+# Shapiro test ofr  normal distribution
+with(FAtg_Krill, shapiro.test(CalCop[Type == "Stomach"]))
+with(FAtg_Krill, shapiro.test(CalCop[Type == "Tissue"]))
+
+# Wilcox test
+wilcox.test(CalCop ~ Type, data = FAtg_Krill, exact=FALSE)
+
+### Salps
+# F-test to test for homogeneity of variances
+var.test(CalCop~Type, data=FAtg_Salp)
+
+# Shapiro test ofr  normal distribution
+with(FAtg_Salp, shapiro.test(CalCop[Type == "Stomach"]))
+with(FAtg_Salp, shapiro.test(CalCop[Type == "Tissue"]))
+
+# Wilcox test
+wilcox.test(CalCop ~ Type, data = FAtg_Salp, exact = FALSE)
+
+### Plot
+gg_Cop_tg<-ggplot(FAtg, aes(x=Type,y=CalCop,color=Species))+
+  stat_boxplot(geom="errorbar",width=0.2)+
+  geom_boxplot()+
+  geom_point(size=2.5, alpha = 0.7, position = "jitter")+
+  theme_bw()+
+  theme(panel.border = element_blank())+
+  theme(axis.line = element_line(colour = "darkgrey"))+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())+
+  labs(x="",y="Dinoflagellate marker of total fatty acids [%]")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))+
+  scale_color_manual(values = c("coral3","darkblue"))+
+  theme(legend.position="none")+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14,margin = margin(r=7)))+#face="bold
+  theme(axis.text.x = element_text(size=14),
+        axis.text.y = element_text(size = 14))+
+  theme(strip.text.x = element_text(size = 15, face = "italic"))+
+  facet_wrap(~Species)
+
+gg_Cop_tg
+
+
+##### Create multiplot for all trophic markers and species comparison
+grid.arrange(arrangeGrob(gg_Diatoms_tg + labs(x="",y="")+ggtitle("Diatoms")+
+                           theme(axis.text.x = element_blank()),
+                         gg_Dino_tg + labs(x="",y="")+ggtitle("Dinoflagellates")+
+                           theme(axis.text.x = element_blank()),
+                         gg_Cop_tg + labs(x="",y="")+ggtitle("Copepods"),
+                         left=textGrob("Markers as share of total fatty acids [%]",rot=90, 
+                                       vjust=1,gp=gpar(cex=1.2))))
+									   
+						   
+############ Mulitvariate analysis using log ratios 
+### load rearranged datafile (FA for each species in columns)
+FAtg2<- read.csv("filename_2", header=T, sep = ";",check.names = "F")
+str(FAtg2)
+
+# subset species
+Salps <- subset(FAtg2, Species=="S. thompsoni")
+Krill <- subset(FAtg2, Species=="E. superba")
+
+# Select only numerical columns with fatty acid data
+Krill_CA <- Krill[,10:69]
+Salps_CA <- Salps[,10:69]
+
+### Peform log ratio analysis
+# Krill
+FAt.LRA<-LRA(Krill_CA,weight = TRUE)
+PLOT.LRA(FAt.LRA,map="contribution",rescale = 3,
+         colarrows = "darkgrey", col = c("blue","black"))
+# Salps
+FAtS.LRA<-LRA(Salps_CA,weight = TRUE)
+PLOT.LRA(FAtS.LRA,map="contribution",rescale = 3,
+         colarrows = "darkgrey", col = c("blue","black"))
+
+### Modified PLOT.LRA function to color species differently
+obj = FAt.LRA
+map = "contribution"
+rescale = 3
+dim = c(1,2)
+main = ""
+cex = c(0.8, 0.8)
+col = c("blue","darkgrey")
+colarrows = "darkgrey"
+axes.inv = c(1, 1)
+
+#function (obj, map = "contribution", rescale = 3, dim = c(1,2),
+#         main = "", cex = c(0.8, 0.8), col = c("blue","darkgrey"),
+#        colarrows = "darkgrey", axes.inv = c(1, 1)) 
+#{
+obj.rpc <- obj$rowcoord[, dim] %*% diag(obj$sv[dim] * axes.inv)
+obj.csc <- obj$colcoord[, dim] %*% diag(axes.inv)
+obj.cpc <- obj.csc %*% diag(obj$sv[dim])
+obj.ccc <- obj.csc * sqrt(obj$colmass)
+if (map == "symmetric") 
+  obj.crd <- obj.cpc
+if (map == "asymmetric") 
+  obj.crd <- obj.csc
+if (map == "contribution") 
+  obj.crd <- obj.ccc
+perc.hor <- 100 * obj$sv[dim[1]]^2/sum(obj$sv^2)
+perc.ver <- 100 * obj$sv[dim[2]]^2/sum(obj$sv^2)
+if (rescale == 1) {
+  plot(1.05 * rbind(obj.rpc, rescale * obj.crd), type = "n", 
+       asp = 1, xlab = paste("Dimension ", dim[1], 
+                             " (", round(perc.hor, 1), "%)", sep = ""), 
+       ylab = paste("Dimension ", dim[2], " (", 
+                    round(perc.ver, 1), "%)", sep = ""), 
+       main = main)
+}
+if (rescale != 1) {
+  plot(1.05 * rbind(obj.rpc, rescale * obj.crd), type = "n", 
+       asp = 1, xlab = paste("LRA dimension ", dim[1], 
+                             " (", round(perc.hor, 1), "%)", sep = ""), 
+       ylab = paste("LRA dimension ", dim[2], " (", 
+                    round(perc.ver, 1), "%)", sep = ""), 
+       xaxt = "n", yaxt = "n", main = main)
+  axis(1)
+  axis(2)
+  axis(3, at = axTicks(3), labels = round(axTicks(3)/rescale, 
+                                          2), col = "black", col.ticks = col[2], col.axis = col[2])
+  axis(4, at = axTicks(4), labels = round(axTicks(4)/rescale, 
+                                          2), col = "black", col.ticks = col[2], col.axis = col[2])
+}
+abline(h = 0, v = 0, col = "gray", lty = 2)
+if (map != "symmetric") 
+  arrows(0, 0, 0.95 * rescale * obj.crd[, 1], 0.95 * rescale * 
+           obj.crd[, 2], length = 0.1, angle = 10, col = colarrows, 
+         lwd = 2)
+text(rescale * obj.crd, labels = obj$colnames, col = col[2], 
+    cex = cex[1], font = 4)
+text(obj.rpc[1:7,], labels = obj$colnames[1:30], col = "darkred", font = 2, 
+     cex = cex[1])
+text(obj.rpc[1:7,], labels = obj$rownames[31:60], col = "darkblue", font = 4, #
+     cex = cex[1])
+
+#}
+dim(obj.rpc)
